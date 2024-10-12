@@ -17,8 +17,8 @@ var (
 			return true
 		},
 	}
-	watchTopics map[string]string = map[string]string{}
 
+	watchTopics    map[string]string = map[string]string{}
 	watchConn      *dicedb.WatchConn
 	watchCh        <-chan *dicedb.WatchResult
 	connectedUsers []*websocket.Conn
@@ -33,8 +33,7 @@ func main() {
 	client = dicedb.NewClient(&dicedb.Options{
 		Addr: "localhost:7379",
 	})
-	connectedUsers = []*websocket.Conn{}
-	go initWatch()
+	go watchLoop()
 
 	http.HandleFunc("/", serveHome)
 	http.HandleFunc("/ws", handleWebSocket)
@@ -48,22 +47,22 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
 }
 
-func initWatch() {
+func watchLoop() {
 	ctx := context.Background()
 	watchConn = client.WatchConn(ctx)
 	if watchConn == nil {
-		log.Fatal("Failed to create watch")
+		log.Fatal("failed to create watch connection")
 		return
 	}
-	watchCh = watchConn.Channel()
 
 	res, err := watchConn.ZRangeWatch(ctx, "leaderboard", "0", "5", "REV", "WITHSCORES")
 	if err != nil {
-		log.Println("Failed to start watch:", err)
+		log.Println("failed to create watch connection:", err)
 		return
 	}
 	watchTopics[res.Fingerprint] = "global_leaderboard"
 
+	watchCh = watchConn.Channel()
 	for {
 		select {
 		case msg := <-watchCh:
@@ -79,8 +78,8 @@ func initWatch() {
 
 				for _, conn := range connectedUsers {
 					if err := conn.WriteJSON(scores); err != nil {
-						log.Println("WebSocket write error:", err)
-						return
+						log.Println("websocket write error:", err)
+						// TODO: remove the connection from the list
 					}
 				}
 			}
@@ -96,7 +95,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	defer conn.Close()
 
 	connectedUsers = append(connectedUsers, conn)
 }
